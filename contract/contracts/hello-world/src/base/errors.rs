@@ -7,4 +7,6 @@ pub enum Error {
     InvalidInput = 1,
     AlreadyExists = 2,
     NotFound = 3,
+    InsufficientBalance = 4,
+    InvalidAmount = 5,
 }
