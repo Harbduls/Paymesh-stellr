@@ -1,9 +1,9 @@
 "use client";
 import TransactionRow, { TransactionData } from "./TransactionRow";
 
-interface TransactionListProps {
-  transactions: TransactionData[];
-}
+// interface TransactionListProps {
+//   transactions: TransactionData[];
+// }
 
 export function TransactionList({ transactions }: { transactions: TransactionData[] }) {
   return (

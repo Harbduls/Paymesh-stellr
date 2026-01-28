@@ -106,7 +106,7 @@ const ITEMS_PER_PAGE = 10;
 
 export default function TransactionsPage() {
   const [currentPage, setCurrentPage] = useState(1);
-  const [showEmpty, setShowEmpty] = useState(false); // Set to false to show transactions by default
+  const [showEmpty] = useState(false); // Set to false to show transactions by default
   const totalPages = Math.ceil(TOTAL_ITEMS / ITEMS_PER_PAGE);
   const transactions = showEmpty ? [] : MOCK_TRANSACTIONS;
 

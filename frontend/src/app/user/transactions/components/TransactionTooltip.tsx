@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Tooltip } from "@/components/ui/tooltip";
+// import { Tooltip } from "@/components/ui/tooltip";
 
 export interface TransactionToken {
   name: string;
