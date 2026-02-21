@@ -1,54 +1,59 @@
-use soroban_sdk::{symbol_short, Address, BytesN, Env};
+use soroban_sdk::{contractevent, Address, BytesN};
 
-// This function publishes an event to the Stellar network
-// TODO: Migrate to #[contractevent] macro instead of deprecated publish method
-#[allow(deprecated)]
-pub fn emit_autoshare_created(env: &Env, id: BytesN<32>, creator: Address) {
-    // Topics help indexers filter for this specific event
-    let topics = (symbol_short!("created"), creator);
-
-    // Publish the event with the AutoShare ID as the data
-    env.events().publish(topics, id);
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct AutoshareCreated {
+    #[topic]
+    pub creator: Address,
+    pub id: BytesN<32>,
 }
 
-#[allow(deprecated)]
-pub fn emit_contract_paused(env: &Env) {
-    let topics = (symbol_short!("paused"),);
-    env.events().publish(topics, ());
+#[contractevent]
+#[derive(Clone)]
+pub struct ContractPaused {}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct ContractUnpaused {}
+
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct AutoshareUpdated {
+    #[topic]
+    pub updater: Address,
+    pub id: BytesN<32>,
 }
 
-#[allow(deprecated)]
-pub fn emit_contract_unpaused(env: &Env) {
-    let topics = (symbol_short!("unpause"),);
-    env.events().publish(topics, ());
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct GroupDeactivated {
+    #[topic]
+    pub creator: Address,
+    pub id: BytesN<32>,
 }
 
-#[allow(deprecated)]
-pub fn emit_autoshare_updated(env: &Env, id: BytesN<32>, updater: Address) {
-    let topics = (symbol_short!("updated"), updater);
-    env.events().publish(topics, id);
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct GroupActivated {
+    #[topic]
+    pub creator: Address,
+    pub id: BytesN<32>,
 }
 
-#[allow(deprecated)]
-pub fn emit_group_deactivated(env: &Env, id: BytesN<32>, creator: Address) {
-    let topics = (symbol_short!("deactive"), creator);
-    env.events().publish(topics, id);
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct AdminTransferred {
+    #[topic]
+    pub old_admin: Address,
+    pub new_admin: Address,
 }
 
-#[allow(deprecated)]
-pub fn emit_group_activated(env: &Env, id: BytesN<32>, creator: Address) {
-    let topics = (symbol_short!("activate"), creator);
-    env.events().publish(topics, id);
-}
-
-#[allow(deprecated)]
-pub fn emit_admin_transferred(env: &Env, old_admin: Address, new_admin: Address) {
-    let topics = (symbol_short!("admintfr"), old_admin);
-    env.events().publish(topics, new_admin);
-}
-
-#[allow(deprecated)]
-pub fn emit_withdrawal(env: &Env, token: Address, amount: i128, recipient: Address) {
-    let topics = (symbol_short!("withdraw"), token, recipient);
-    env.events().publish(topics, amount);
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct Withdrawal {
+    #[topic]
+    pub token: Address,
+    #[topic]
+    pub recipient: Address,
+    pub amount: i128,
 }

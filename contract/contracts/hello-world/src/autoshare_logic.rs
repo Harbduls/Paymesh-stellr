@@ -1,7 +1,7 @@
 use crate::base::errors::Error;
 use crate::base::events::{
-    emit_admin_transferred, emit_autoshare_updated, emit_contract_paused, emit_contract_unpaused,
-    emit_group_activated, emit_group_deactivated, emit_withdrawal,
+    AdminTransferred, AutoshareCreated, AutoshareUpdated, ContractPaused, ContractUnpaused,
+    GroupActivated, GroupDeactivated, Withdrawal,
 };
 use crate::base::types::{AutoShareDetails, GroupMember, PaymentHistory};
 use soroban_sdk::{contracttype, token, Address, BytesN, Env, String, Vec};
@@ -96,8 +96,11 @@ pub fn create_autoshare(
         total_cost,
     );
 
-    // TODO: Migrate to #[contractevent] macro instead of deprecated publish method
-    // emit_autoshare_created(&env, id, creator);
+    AutoshareCreated {
+        creator: creator.clone(),
+        id: id.clone(),
+    }
+    .publish(&env);
     Ok(())
 }
 
@@ -251,7 +254,11 @@ pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) -> R
     require_admin(&env, &current_admin)?;
 
     env.storage().persistent().set(&DataKey::Admin, &new_admin);
-    emit_admin_transferred(&env, current_admin, new_admin);
+    AdminTransferred {
+        old_admin: current_admin,
+        new_admin,
+    }
+    .publish(&env);
     Ok(())
 }
 
@@ -271,7 +278,7 @@ pub fn pause(env: Env, admin: Address) -> Result<(), Error> {
     }
 
     env.storage().persistent().set(&pause_key, &true);
-    emit_contract_paused(&env);
+    ContractPaused {}.publish(&env);
     Ok(())
 }
 
@@ -287,7 +294,7 @@ pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
     }
 
     env.storage().persistent().set(&pause_key, &false);
-    emit_contract_unpaused(&env);
+    ContractUnpaused {}.publish(&env);
     Ok(())
 }
 
@@ -605,7 +612,11 @@ pub fn update_members(
     let members_key = DataKey::GroupMembers(id.clone());
     env.storage().persistent().set(&members_key, &new_members);
 
-    emit_autoshare_updated(&env, id, caller);
+    AutoshareUpdated {
+        id: id.clone(),
+        updater: caller,
+    }
+    .publish(&env);
     Ok(())
 }
 
@@ -630,7 +641,11 @@ pub fn deactivate_group(env: Env, id: BytesN<32>, caller: Address) -> Result<(),
     details.is_active = false;
     env.storage().persistent().set(&key, &details);
 
-    emit_group_deactivated(&env, id, caller);
+    GroupDeactivated {
+        id: id.clone(),
+        creator: caller,
+    }
+    .publish(&env);
     Ok(())
 }
 
@@ -655,7 +670,11 @@ pub fn activate_group(env: Env, id: BytesN<32>, caller: Address) -> Result<(), E
     details.is_active = true;
     env.storage().persistent().set(&key, &details);
 
-    emit_group_activated(&env, id, caller);
+    GroupActivated {
+        id: id.clone(),
+        creator: caller,
+    }
+    .publish(&env);
     Ok(())
 }
 
@@ -696,7 +715,12 @@ pub fn withdraw(
     let client = token::TokenClient::new(&env, &token);
     client.transfer(&env.current_contract_address(), &recipient, &amount);
 
-    emit_withdrawal(&env, token, amount, recipient);
+    Withdrawal {
+        token,
+        amount,
+        recipient,
+    }
+    .publish(&env);
     Ok(())
 }
 
