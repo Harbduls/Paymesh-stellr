@@ -2,9 +2,9 @@
 
 import React from "react";
 import Link from "next/link";
-import coins from "../../../../public/coin/Container (1).png";
+import coins from "../../../../../public/coin/Container (1).png";
 import Image from "next/image";
-import logo from "../../../../public/navLogo.svg";
+import logo from "../../../../../public/navLogo.svg";
 import Tg from "@/components/icons/tg";
 import X from "@/components/icons/x";
 

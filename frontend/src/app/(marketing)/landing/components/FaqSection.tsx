@@ -2,8 +2,8 @@
 
 import React, { useState } from "react";
 import { Plus } from "lucide-react";
-import typhoon from "../../../../public/coin/Image (5).png";
-import stellar from "../../../../public/stellar.jpeg";
+import typhoon from "../../../../../public/coin/Image (5).png";
+import stellar from "../../../../../public/stellar.jpeg";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 

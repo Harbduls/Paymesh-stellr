@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
-import EmptyState from "@/app/user/transactions/components/EmptyState";
-import { TransactionData } from "@/app/user/transactions/components/TransactionRow";
-import Pagination from "@/app/user/transactions/components/Pagination";
-import { TransactionList } from "@/app/user/transactions/components/TransactionList";
+import EmptyState from "./components/EmptyState";
+import { TransactionData } from "./components/TransactionRow";
+import Pagination from "./components/Pagination";
+import { TransactionList } from "./components/TransactionList";
 
 const MOCK_TRANSACTIONS: TransactionData[] = [
   {
@@ -110,44 +110,30 @@ export default function TransactionsPage() {
   const totalPages = Math.ceil(TOTAL_ITEMS / ITEMS_PER_PAGE);
   const transactions = showEmpty ? [] : MOCK_TRANSACTIONS;
 
-return (
-  <>
-    <div
-      className="min-h-screen w-full fixed inset-0 -z-10"
-      style={{
-        backgroundImage: 'url("/Bg 1.svg")',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        backgroundAttachment: 'fixed'
-      }}
-    />
-    <div className="min-h-screen pt-16 sm:pt-20 lg:pt-24 pb-8 sm:pb-12 px-3 sm:px-4 lg:px-8 max-w-425 mx-auto relative z-10 w-full overflow-x-hidden">
-      <div className="flex flex-col gap-4 sm:gap-6 lg:gap-8 w-full max-w-full">
-        {transactions.length > 0 ? (
-          <>
-            <div className="bg-[#0A0B0F]/40 backdrop-blur-xl rounded-xl sm:rounded-2xl lg:rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden p-2 sm:p-3 lg:p-4 min-h-[400px] sm:min-h-[500px] max-h-[400px] w-full">
-              <div className="flex-1 w-full overflow-y-auto transaction-list-scrollable">
-                <TransactionList transactions={transactions} />
-              </div>
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6 lg:gap-8 w-full max-w-full">
+      {transactions.length > 0 ? (
+        <>
+          <div className="bg-[#0A0B0F]/40 backdrop-blur-xl rounded-xl sm:rounded-2xl lg:rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden p-2 sm:p-3 lg:p-4 min-h-[400px] sm:min-h-[500px] max-h-[400px] w-full">
+            <div className="flex-1 w-full overflow-y-auto transaction-list-scrollable">
+              <TransactionList transactions={transactions} />
             </div>
-            <div className="w-full max-w-full">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                totalItems={TOTAL_ITEMS}
-                itemsPerPage={ITEMS_PER_PAGE}
-                onPageChange={setCurrentPage}
-              />
-            </div>
-          </>
-        ) : (
-          <div className="w-full">
-            <EmptyState />
           </div>
-        )}
-      </div>
+          <div className="w-full max-w-full">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={TOTAL_ITEMS}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={setCurrentPage}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="w-full">
+          <EmptyState />
+        </div>
+      )}
     </div>
-    </>
   );
 }

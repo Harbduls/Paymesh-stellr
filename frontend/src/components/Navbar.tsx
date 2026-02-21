@@ -6,9 +6,9 @@ import ConnectWalletButton from "./ConnectWalletButton";
 
 const NAV_ITEMS = [
   { name: "Overview", href: "/user/overview" },
-  { name: "Groups", href: "#" },
-  { name: "Fundraiser", href: "#" },
-  { name: "Transactions", href: "#" },
+  { name: "Groups", href: "/groups" },
+  { name: "Fundraising", href: "/fundraising" },
+  { name: "Transactions", href: "/user/transactions" },
   { name: "Profile Analytics", href: "#" },
 ];
 
@@ -38,9 +38,8 @@ export function Navbar() {
             <a
               key={item.name}
               href={item.href}
-              className={`px-6 py-[15px] rounded-full text-[#dddddd] text-xs font-black tracking-[0] uppercase transition-colors ${
-                item.name === "Overview" ? "bg-[#5B63D6]" : "hover:bg-[#5B63D6]"
-              }`}
+              className={`px-6 py-[15px] rounded-full text-[#dddddd] text-xs font-black tracking-[0] uppercase transition-colors ${item.name === "Overview" ? "bg-[#5B63D6]" : "hover:bg-[#5B63D6]"
+                }`}
             >
               {item.name}
             </a>
