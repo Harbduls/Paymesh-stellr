@@ -67,8 +67,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            node_modules
-            .next/cache
+            frontend/node_modules
+            frontend/.next/cache
           key: ${{ runner.os }}-deps-${{ hashFiles('frontend/package-lock.json', 'frontend/pnpm-lock.yaml', 'frontend/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-deps-
