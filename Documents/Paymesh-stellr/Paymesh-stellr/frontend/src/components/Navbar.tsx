@@ -7,9 +7,9 @@ import Image from "next/image";
 
 const NAV_ITEMS = [
   { name: "Overview", href: "/user/overview" },
-  { name: "Groups", href: "#" },
-  { name: "Fundraiser", href: "#" },
-  { name: "Transactions", href: "#" },
+  { name: "Groups", href: "/groups" },
+  { name: "Fundraising", href: "/fundraising" },
+  { name: "Transactions", href: "/user/transactions" },
   { name: "Profile Analytics", href: "#" },
 ];
 
@@ -25,8 +25,7 @@ export function Navbar() {
             src="/logo.jpeg"
             alt="Paymesh Logo"
             fill
-            sizes="(max-width: 1024px) 36px, 48px"
-            className="w-full h-full object-cover"
+            className="object-cover"
           />
         </div>
         <span className="text-2xl/[100%] lg:text-[28px]/12 font-bold text-white tracking-wide font-anton">
@@ -41,9 +40,8 @@ export function Navbar() {
             <a
               key={item.name}
               href={item.href}
-              className={`px-6 py-[15px] rounded-full text-[#dddddd] text-xs font-black tracking-[0] uppercase transition-colors ${
-                item.name === "Overview" ? "bg-[#5B63D6]" : "hover:bg-[#5B63D6]"
-              }`}
+              className={`px-6 py-[15px] rounded-full text-[#dddddd] text-xs font-black tracking-[0] uppercase transition-colors ${item.name === "Overview" ? "bg-[#5B63D6]" : "hover:bg-[#5B63D6]"
+                }`}
             >
               {item.name}
             </a>
