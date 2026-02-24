@@ -1,6 +1,6 @@
 use soroban_sdk::{Address, BytesN, Env, String, Vec};
 
-use crate::base::types::{AutoShareDetails, GroupMember, PaymentHistory};
+use crate::base::types::{AutoShareDetails, DistributionHistory, GroupMember, PaymentHistory};
 
 /// AutoShareTrait defines the interface for the AutoShare contract.
 /// This trait serves as a formal specification that the AutoShareContract implementation
@@ -69,7 +69,18 @@ pub trait AutoShareTrait {
     fn get_group_members(env: Env, id: BytesN<32>) -> Vec<GroupMember>;
 
     /// Adds a member to a group with specified percentage.
-    fn add_group_member(env: Env, id: BytesN<32>, address: Address, percentage: u32);
+    /// Only the group creator (caller) may add members.
+    fn add_group_member(
+        env: Env,
+        id: BytesN<32>,
+        caller: Address,
+        address: Address,
+        percentage: u32,
+    );
+
+    /// Removes a single member from a group. Only the creator can call; group must be active.
+    /// After removal, remaining percentages may not sum to 100; call update_members to set a valid split.
+    fn remove_group_member(env: Env, id: BytesN<32>, caller: Address, member_address: Address);
 
     /// Deactivates a group. Only the creator can deactivate.
     fn deactivate_group(env: Env, id: BytesN<32>, caller: Address);
@@ -77,8 +88,15 @@ pub trait AutoShareTrait {
     /// Activates a group. Only the creator can activate.
     fn activate_group(env: Env, id: BytesN<32>, caller: Address);
 
+    /// Updates the name of a group. Only the creator can update.
+    fn update_group_name(env: Env, id: BytesN<32>, caller: Address, new_name: String);
+
     /// Returns whether a group is active.
     fn is_group_active(env: Env, id: BytesN<32>) -> bool;
+
+    /// Permanently deletes a group. Only creator or admin can delete.
+    /// Group must be deactivated first and have 0 remaining usages.
+    fn delete_group(env: Env, id: BytesN<32>, caller: Address);
 
     // ============================================================================
     // Token Management
@@ -95,6 +113,9 @@ pub trait AutoShareTrait {
 
     /// Checks if a token is supported.
     fn is_token_supported(env: Env, token: Address) -> bool;
+
+    /// Distributes a payment among group members based on their percentages.
+    fn distribute(env: Env, id: BytesN<32>, token: Address, amount: i128, sender: Address);
 
     // ============================================================================
     // Payment Configuration
@@ -130,6 +151,16 @@ pub trait AutoShareTrait {
     fn get_group_payment_history(env: Env, id: BytesN<32>) -> Vec<PaymentHistory>;
 
     // ============================================================================
+    // Distribution History
+    // ============================================================================
+
+    /// Returns all distribution history for a group.
+    fn get_group_distributions(env: Env, id: BytesN<32>) -> Vec<DistributionHistory>;
+
+    /// Returns all distribution history for a member.
+    fn get_member_distributions(env: Env, member: Address) -> Vec<DistributionHistory>;
+
+    // ============================================================================
     // Usage Tracking
     // ============================================================================
 
@@ -138,7 +169,4 @@ pub trait AutoShareTrait {
 
     /// Returns the total usages paid for a group.
     fn get_total_usages_paid(env: Env, id: BytesN<32>) -> u32;
-
-    /// Reduces the usage count by 1 (dummy function for testing).
-    fn reduce_usage(env: Env, id: BytesN<32>);
 }

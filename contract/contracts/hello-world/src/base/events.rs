@@ -42,6 +42,14 @@ pub struct GroupActivated {
 
 #[contractevent(data_format = "single-value")]
 #[derive(Clone)]
+pub struct GroupDeleted {
+    #[topic]
+    pub deleter: Address,
+    pub id: BytesN<32>,
+}
+
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
 pub struct AdminTransferred {
     #[topic]
     pub old_admin: Address,
@@ -56,4 +64,24 @@ pub struct Withdrawal {
     #[topic]
     pub recipient: Address,
     pub amount: i128,
+}
+
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct Distribution {
+    #[topic]
+    pub id: BytesN<32>,
+    #[topic]
+    pub token: Address,
+    #[topic]
+    pub sender: Address,
+    pub amount: i128,
+}
+
+#[contractevent(data_format = "single-value")]
+#[derive(Clone)]
+pub struct GroupNameUpdated {
+    #[topic]
+    pub updater: Address,
+    pub id: BytesN<32>,
 }
