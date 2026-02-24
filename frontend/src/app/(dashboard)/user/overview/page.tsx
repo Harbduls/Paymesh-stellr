@@ -1,9 +1,11 @@
 "use client";
 
 import React from "react";
-import ActiveGroupsWidget from "./components/ActiveGroupsWidget";
 import { motion } from "framer-motion";
 import { LayoutDashboard } from "lucide-react";
+import CryptoIconsRow from "./components/CryptoIconsRow";
+import YourGroupsTable from "./components/YourGroupsTable";
+import ActiveCrowdFundingTable from "./components/ActiveCrowdFundingTable";
 
 export default function OverviewPage() {
   return (
@@ -28,9 +30,13 @@ export default function OverviewPage() {
         </div>
       </motion.div>
 
-      {/* Widgets Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6 sm:gap-8">
-        <ActiveGroupsWidget />
+      {/* Crypto Icons Row */}
+      <CryptoIconsRow />
+
+      {/* Tables Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+        <YourGroupsTable />
+        <ActiveCrowdFundingTable />
       </div>
     </div>
   );
