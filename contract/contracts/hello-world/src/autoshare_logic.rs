@@ -309,6 +309,14 @@ pub fn add_group_member(
     env.storage().persistent().set(&key, &details);
     bump_persistent(&env, &key);
 
+    AutoshareUpdated {
+        id: id.clone(),
+        updater: caller,
+    }
+    .publish(&env);
+
+    crate::base::events::emit_member_added(&env, id.clone(), address.clone(), percentage);
+
     Ok(())
 }
 
