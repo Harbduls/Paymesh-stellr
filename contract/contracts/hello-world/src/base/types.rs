@@ -50,6 +50,15 @@ pub struct DistributionHistory {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DistributionRecord {
+    pub group_id: BytesN<32>,
+    pub amount: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GroupPage {
     pub groups: Vec<AutoShareDetails>,
     pub total: u32,
@@ -63,4 +72,21 @@ pub struct FundraisingConfig {
     pub target_amount: i128,
     pub total_raised: i128,
     pub is_active: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FundraisingContribution {
+    pub group_id: BytesN<32>,
+    pub contributor: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupStats {
+    pub total_raised: i128,
+    pub contribution_count: u32,
 }

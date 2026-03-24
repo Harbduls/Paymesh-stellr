@@ -1,13 +1,19 @@
 use crate::base::errors::Error;
 use crate::base::events::{
-    AdminTransferred, AutoshareCreated, AutoshareUpdated, ContractPaused, ContractUnpaused,
-    Distribution, GroupActivated, GroupDeactivated, GroupDeleted, GroupNameUpdated, Withdrawal,
+    emit_contribution, emit_distribution, AdminTransferred, AutoshareCreated, AutoshareUpdated,
+    ContractPaused, ContractUnpaused, FundraisingStarted, GroupActivated, GroupDeactivated,
+    GroupDeleted, GroupNameUpdated, Withdrawal,
 };
+
 use crate::base::types::{
-    AutoShareDetails, DistributionHistory, FundraisingConfig, GroupMember, MemberAmount,
-    PaymentHistory,
+    AutoShareDetails, DistributionHistory, DistributionRecord, FundraisingConfig,
+    FundraisingContribution, GroupMember, GroupStats, MemberAmount, PaymentHistory,
 };
 use soroban_sdk::{contracttype, token, Address, BytesN, Env, String, Vec};
+
+extern crate alloc;
+use alloc::string::String as AllocString;
+use alloc::string::ToString;
 
 #[contracttype]
 pub enum DataKey {
@@ -19,15 +25,20 @@ pub enum DataKey {
     UserPaymentHistory(Address),
     GroupPaymentHistory(BytesN<32>),
     GroupDistributionHistory(BytesN<32>),
-    MemberDistributionHistory(Address),
+    MemberDistributions(Address),
     MemberGroupEarnings(Address, BytesN<32>),
     GroupFundraising(BytesN<32>),
+    GroupContributions(BytesN<32>),
+    UserContributions(Address),
+    GroupStats(BytesN<32>),
     IsPaused,
+    MemberGroups(Address),
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
 const PERSISTENT_BUMP_THRESHOLD: u32 = 7 * DAY_IN_LEDGERS; // 1 week
 const PERSISTENT_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS; // 30 days
+const MAX_MEMBERS: u32 = 50; // Maximum number of members per group to prevent DoS
 
 fn bump_persistent<K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>>(env: &Env, key: &K) {
     if env.storage().persistent().has(key) {
@@ -38,6 +49,19 @@ fn bump_persistent<K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>>(env: &Env, ke
         );
     }
 }
+
+fn is_valid_name(name: &String) -> bool {
+    let alloc_str: AllocString = name.to_string();
+    let trimmed = alloc_str.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if alloc_str.len() > 60 {
+        return false;
+    }
+    true
+}
+
 pub fn create_autoshare(
     env: Env,
     id: BytesN<32>,
@@ -51,6 +75,10 @@ pub fn create_autoshare(
     // Check if contract is paused
     if get_paused_status(&env) {
         return Err(Error::ContractPaused);
+    }
+
+    if !is_valid_name(&name) {
+        return Err(Error::EmptyName);
     }
 
     let key = DataKey::AutoShare(id.clone());
@@ -130,17 +158,26 @@ pub fn get_autoshare(env: Env, id: BytesN<32>) -> Result<AutoShareDetails, Error
     result.ok_or(Error::NotFound)
 }
 
-pub fn get_all_groups(env: Env) -> Vec<AutoShareDetails> {
+fn get_all_group_ids(env: &Env) -> Vec<BytesN<32>> {
     let all_groups_key = DataKey::AllGroups;
     let group_ids: Vec<BytesN<32>> = env
         .storage()
         .persistent()
         .get(&all_groups_key)
-        .unwrap_or(Vec::new(&env));
+        .unwrap_or(Vec::new(env));
     if !group_ids.is_empty() {
-        bump_persistent(&env, &all_groups_key);
+        bump_persistent(env, &all_groups_key);
     }
+    group_ids
+}
 
+pub fn get_group_count(env: Env) -> u32 {
+    let group_ids = get_all_group_ids(&env);
+    group_ids.len()
+}
+
+pub fn get_all_groups(env: Env) -> Vec<AutoShareDetails> {
+    let group_ids = get_all_group_ids(&env);
     let mut result: Vec<AutoShareDetails> = Vec::new(&env);
     for id in group_ids.iter() {
         if let Ok(details) = get_autoshare(env.clone(), id) {
@@ -151,38 +188,35 @@ pub fn get_all_groups(env: Env) -> Vec<AutoShareDetails> {
 }
 
 pub fn get_groups_by_creator(env: Env, creator: Address) -> Vec<AutoShareDetails> {
-    let all_groups = get_all_groups(env.clone());
+    let group_ids = get_all_group_ids(&env);
     let mut result: Vec<AutoShareDetails> = Vec::new(&env);
 
-    for group in all_groups.iter() {
-        if group.creator == creator {
-            result.push_back(group);
+    for id in group_ids.iter() {
+        if let Ok(group) = get_autoshare(env.clone(), id) {
+            if group.creator == creator {
+                result.push_back(group);
+            }
         }
     }
     result
 }
 
-pub fn get_groups_paginated(env: Env, offset: u32, limit: u32) -> crate::base::types::GroupPage {
-    let all_groups_key = DataKey::AllGroups;
-    let group_ids: Vec<BytesN<32>> = env
-        .storage()
-        .persistent()
-        .get(&all_groups_key)
-        .unwrap_or(Vec::new(&env));
-
+pub fn get_groups_paginated(
+    env: Env,
+    start_index: u32,
+    limit: u32,
+) -> crate::base::types::GroupPage {
+    let group_ids = get_all_group_ids(&env);
     let total = group_ids.len();
 
     // Cap limit at 20 as per requirement
-    let mut actual_limit = limit;
-    if actual_limit > 20 {
-        actual_limit = 20;
-    }
+    let actual_limit = limit.min(20);
 
     let mut groups: Vec<AutoShareDetails> = Vec::new(&env);
 
-    if offset < total {
-        let end = (offset + actual_limit).min(total);
-        for i in offset..end {
+    if actual_limit > 0 && start_index < total {
+        let end = start_index.saturating_add(actual_limit).min(total);
+        for i in start_index..end {
             if let Some(id) = group_ids.get(i) {
                 if let Ok(details) = get_autoshare(env.clone(), id) {
                     groups.push_back(details);
@@ -194,7 +228,7 @@ pub fn get_groups_paginated(env: Env, offset: u32, limit: u32) -> crate::base::t
     crate::base::types::GroupPage {
         groups,
         total,
-        offset,
+        offset: start_index,
         limit: actual_limit,
     }
 }
@@ -205,17 +239,17 @@ pub fn get_groups_by_creator_paginated(
     offset: u32,
     limit: u32,
 ) -> crate::base::types::GroupPage {
-    let all_groups_key = DataKey::AllGroups;
-    let group_ids: Vec<BytesN<32>> = env
-        .storage()
-        .persistent()
-        .get(&all_groups_key)
-        .unwrap_or(Vec::new(&env));
+    let group_ids = get_all_group_ids(&env);
 
     // Cap limit at 20 as per requirement
-    let mut actual_limit = limit;
-    if actual_limit > 20 {
-        actual_limit = 20;
+    let actual_limit = limit.min(20);
+    if actual_limit == 0 {
+        return crate::base::types::GroupPage {
+            groups: Vec::new(&env),
+            total: 0,
+            offset,
+            limit: actual_limit,
+        };
     }
 
     let mut groups: Vec<AutoShareDetails> = Vec::new(&env);
@@ -240,6 +274,35 @@ pub fn get_groups_by_creator_paginated(
         offset,
         limit: actual_limit,
     }
+}
+
+pub fn get_groups_by_member(env: Env, member: Address) -> Vec<AutoShareDetails> {
+    let key = DataKey::MemberGroups(member);
+    let group_ids: Vec<BytesN<32>> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(Vec::new(&env));
+
+    if !group_ids.is_empty() {
+        bump_persistent(&env, &key);
+    }
+
+    let mut result: Vec<AutoShareDetails> = Vec::new(&env);
+
+    for id in group_ids.iter() {
+        if let Ok(group) = get_autoshare(env.clone(), id.clone()) {
+            if group.is_active {
+                result.push_back(group);
+            } else {
+                // To match behavior where inactive groups are still returned by `get_autoshare`,
+                // we include them. If they should be skipped, we add a check here.
+                result.push_back(group);
+            }
+        }
+    }
+
+    result
 }
 
 pub fn is_group_member(env: Env, id: BytesN<32>, address: Address) -> Result<bool, Error> {
@@ -296,6 +359,11 @@ pub fn add_group_member(
         }
     }
 
+    // Check if adding this member would exceed MAX_MEMBERS
+    if details.members.len() >= MAX_MEMBERS {
+        return Err(Error::MaxMembersExceeded);
+    }
+
     // Add new member
     details.members.push_back(GroupMember {
         address: address.clone(),
@@ -309,13 +377,19 @@ pub fn add_group_member(
     env.storage().persistent().set(&key, &details);
     bump_persistent(&env, &key);
 
-    AutoshareUpdated {
-        id: id.clone(),
-        updater: caller,
-    }
-    .publish(&env);
+// Update MemberGroups index
+let member_groups_key = DataKey::MemberGroups(address.clone());
+let mut member_groups: Vec<BytesN<32>> = env.storage().persistent().get(&member_groups_key).unwrap_or(Vec::new(&env));
+member_groups.push_back(id.clone());
+env.storage().persistent().set(&member_groups_key, &member_groups);
+bump_persistent(&env, &member_groups_key);
 
-    crate::base::events::emit_member_added(&env, id.clone(), address.clone(), percentage);
+AutoshareUpdated {
+    id: id.clone(),
+    updater: caller,
+}.publish(&env);
+
+crate::base::events::emit_member_added(&env, id.clone(), address.clone(), percentage);
 
     Ok(())
 }
@@ -364,6 +438,31 @@ pub fn remove_group_member(
     details.members = new_members.clone();
     env.storage().persistent().set(&key, &details);
     bump_persistent(&env, &key);
+
+    // Update MemberGroups index
+    let member_groups_key = DataKey::MemberGroups(member_address.clone());
+    let member_groups: Vec<BytesN<32>> = env
+        .storage()
+        .persistent()
+        .get(&member_groups_key)
+        .unwrap_or(Vec::new(&env));
+
+    let mut new_member_groups: Vec<BytesN<32>> = Vec::new(&env);
+    let mut group_removed = false;
+    for group_id in member_groups.iter() {
+        if group_id != id {
+            new_member_groups.push_back(group_id);
+        } else {
+            group_removed = true;
+        }
+    }
+
+    if group_removed {
+        env.storage()
+            .persistent()
+            .set(&member_groups_key, &new_member_groups);
+        bump_persistent(&env, &member_groups_key);
+    }
 
     AutoshareUpdated {
         id: id.clone(),
@@ -757,7 +856,7 @@ fn record_distribution(
     };
 
     // Add to group's distribution history
-    let group_history_key = DataKey::GroupDistributionHistory(group_id);
+    let group_history_key = DataKey::GroupDistributionHistory(group_id.clone());
     let mut group_history: Vec<DistributionHistory> = env
         .storage()
         .persistent()
@@ -770,13 +869,19 @@ fn record_distribution(
 
     // Add to each member's distribution history
     for member_amount in member_amounts.iter() {
-        let member_history_key = DataKey::MemberDistributionHistory(member_amount.address.clone());
-        let mut member_history: Vec<DistributionHistory> = env
+        let member_history_key = DataKey::MemberDistributions(member_amount.address.clone());
+        let mut member_history: Vec<DistributionRecord> = env
             .storage()
             .persistent()
             .get(&member_history_key)
             .unwrap_or(Vec::new(&env));
-        member_history.push_back(distribution.clone());
+        let record = DistributionRecord {
+            group_id: group_id.clone(),
+            amount: member_amount.amount,
+            token: token.clone(),
+            timestamp,
+        };
+        member_history.push_back(record);
         env.storage()
             .persistent()
             .set(&member_history_key, &member_history);
@@ -791,8 +896,8 @@ pub fn get_group_distributions(env: Env, id: BytesN<32>) -> Vec<DistributionHist
         .unwrap_or(Vec::new(&env))
 }
 
-pub fn get_member_distributions(env: Env, member: Address) -> Vec<DistributionHistory> {
-    let member_history_key = DataKey::MemberDistributionHistory(member);
+pub fn get_member_distributions(env: Env, member: Address) -> Vec<DistributionRecord> {
+    let member_history_key = DataKey::MemberDistributions(member);
     env.storage()
         .persistent()
         .get(&member_history_key)
@@ -883,10 +988,18 @@ pub fn update_members(
         return Err(Error::EmptyMembers);
     }
 
+    // Check if new members count exceeds MAX_MEMBERS
+    if new_members.len() > MAX_MEMBERS {
+        return Err(Error::MaxMembersExceeded);
+    }
+
     let mut total_percentage: u32 = 0;
     let mut seen_addresses = Vec::new(&env);
 
     for member in new_members.iter() {
+        if member.percentage == 0 {
+            return Err(Error::InvalidInput);
+        }
         total_percentage += member.percentage;
 
         for seen in seen_addresses.iter() {
@@ -901,10 +1014,74 @@ pub fn update_members(
         return Err(Error::InvalidTotalPercentage);
     }
 
+    // Determine old members for index updating
+    let old_members = details.members.clone();
+
     // Update members in details
     details.members = new_members.clone();
     env.storage().persistent().set(&key, &details);
     bump_persistent(&env, &key);
+
+    // Update MemberGroups index for removed and added members
+    for old_member in old_members.iter() {
+        let mut found_in_new = false;
+        for new_member in new_members.iter() {
+            if old_member.address == new_member.address {
+                found_in_new = true;
+                break;
+            }
+        }
+        if !found_in_new {
+            // Member was removed, remove group from their index
+            let member_groups_key = DataKey::MemberGroups(old_member.address.clone());
+            let member_groups: Vec<BytesN<32>> = env
+                .storage()
+                .persistent()
+                .get(&member_groups_key)
+                .unwrap_or(Vec::new(&env));
+
+            let mut updated_member_groups: Vec<BytesN<32>> = Vec::new(&env);
+            let mut group_removed = false;
+            for group_id in member_groups.iter() {
+                if group_id != id {
+                    updated_member_groups.push_back(group_id);
+                } else {
+                    group_removed = true;
+                }
+            }
+            if group_removed {
+                env.storage()
+                    .persistent()
+                    .set(&member_groups_key, &updated_member_groups);
+                bump_persistent(&env, &member_groups_key);
+            }
+        }
+    }
+
+    for new_member in new_members.iter() {
+        let mut found_in_old = false;
+        for old_member in old_members.iter() {
+            if new_member.address == old_member.address {
+                found_in_old = true;
+                break;
+            }
+        }
+        if !found_in_old {
+            // Member was added, add group to their index
+            let member_groups_key = DataKey::MemberGroups(new_member.address.clone());
+            let mut member_groups: Vec<BytesN<32>> = env
+                .storage()
+                .persistent()
+                .get(&member_groups_key)
+                .unwrap_or(Vec::new(&env));
+
+            member_groups.push_back(id.clone());
+            env.storage()
+                .persistent()
+                .set(&member_groups_key, &member_groups);
+            bump_persistent(&env, &member_groups_key);
+        }
+    }
 
     AutoshareUpdated {
         id: id.clone(),
@@ -1011,7 +1188,7 @@ pub fn update_group_name(
         return Err(Error::GroupInactive);
     }
 
-    if new_name.is_empty() {
+    if !is_valid_name(&new_name) {
         return Err(Error::EmptyName);
     }
 
@@ -1125,6 +1302,32 @@ pub fn delete_group(env: Env, id: BytesN<32>, caller: Address) -> Result<(), Err
     // - DataKey::UserPaymentHistory(Address)
     // - DataKey::GroupPaymentHistory(BytesN<32>)
 
+    // Step 8: Remove group from all members' MemberGroups index
+    for member in details.members.iter() {
+        let member_groups_key = DataKey::MemberGroups(member.address.clone());
+        let member_groups: Vec<BytesN<32>> = env
+            .storage()
+            .persistent()
+            .get(&member_groups_key)
+            .unwrap_or(Vec::new(&env));
+
+        let mut updated_member_groups: Vec<BytesN<32>> = Vec::new(&env);
+        let mut group_removed = false;
+        for group_id in member_groups.iter() {
+            if group_id != id {
+                updated_member_groups.push_back(group_id);
+            } else {
+                group_removed = true;
+            }
+        }
+        if group_removed {
+            env.storage()
+                .persistent()
+                .set(&member_groups_key, &updated_member_groups);
+            bump_persistent(&env, &member_groups_key);
+        }
+    }
+
     // Step 9: Emit deletion event
     GroupDeleted {
         deleter: caller,
@@ -1217,11 +1420,46 @@ pub fn distribute(
 
     let client = token::TokenClient::new(&env, &token);
     client.transfer(&sender, &env.current_contract_address(), &amount);
+    let member_amounts = perform_distribution(&env, &id, &token, amount, &details.members);
+    let distribution_number = details.total_usages_paid - details.usage_count;
+    record_distribution(
+        env.clone(),
+        id.clone(),
+        sender.clone(),
+        amount,
+        token.clone(),
+        member_amounts.clone(),
+        distribution_number,
+    );
+    // Emit new distribution event for fund flow tracking
+    emit_distribution(
+        &env,
+        &id,
+        &sender,
+        &token,
+        amount,
+        member_amounts.len() as u32,
+    );
 
+    details.usage_count -= 1;
+    env.storage().persistent().set(&key, &details);
+    bump_persistent(&env, &key);
+
+    Ok(())
+}
+
+fn perform_distribution(
+    env: &Env,
+    id: &BytesN<32>,
+    token: &Address,
+    amount: i128,
+    members: &Vec<GroupMember>,
+) -> Vec<MemberAmount> {
+    let client = token::TokenClient::new(env, token);
     let mut distributed: i128 = 0;
-    let members_len = details.members.len() as usize;
-    let mut member_amounts: Vec<MemberAmount> = Vec::new(&env);
-    for (idx, member) in details.members.iter().enumerate() {
+    let members_len = members.len() as usize;
+    let mut member_amounts: Vec<MemberAmount> = Vec::new(env);
+    for (idx, member) in members.iter().enumerate() {
         let share = if idx + 1 < members_len {
             (amount * (member.percentage as i128)) / 100
         } else {
@@ -1241,34 +1479,10 @@ pub fn distribute(
             env.storage()
                 .persistent()
                 .set(&earnings_key, &(current_earnings + share));
-            bump_persistent(&env, &earnings_key);
+            bump_persistent(env, &earnings_key);
         }
     }
-
-    let distribution_number = details.total_usages_paid - details.usage_count;
-    record_distribution(
-        env.clone(),
-        id.clone(),
-        sender.clone(),
-        amount,
-        token.clone(),
-        member_amounts,
-        distribution_number,
-    );
-
-    details.usage_count -= 1;
-    env.storage().persistent().set(&key, &details);
-    bump_persistent(&env, &key);
-
-    Distribution {
-        id,
-        token,
-        sender,
-        amount,
-    }
-    .publish(&env);
-
-    Ok(())
+    member_amounts
 }
 
 pub fn get_member_earnings(env: Env, member: Address, group_id: BytesN<32>) -> i128 {
@@ -1295,6 +1509,24 @@ pub fn get_fundraising_status(env: Env, id: BytesN<32>) -> FundraisingConfig {
     }
 }
 
+pub fn get_group_contributions(env: Env, id: BytesN<32>) -> Vec<FundraisingContribution> {
+    let key = DataKey::GroupContributions(id);
+    let result: Option<Vec<FundraisingContribution>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        bump_persistent(&env, &key);
+    }
+    result.unwrap_or(Vec::new(&env))
+}
+
+pub fn get_user_contributions(env: Env, user: Address) -> Vec<FundraisingContribution> {
+    let key = DataKey::UserContributions(user);
+    let result: Option<Vec<FundraisingContribution>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        bump_persistent(&env, &key);
+    }
+    result.unwrap_or(Vec::new(&env))
+}
+
 fn validate_members(members: &Vec<GroupMember>) -> Result<(), Error> {
     if members.is_empty() {
         return Err(Error::EmptyMembers);
@@ -1304,6 +1536,9 @@ fn validate_members(members: &Vec<GroupMember>) -> Result<(), Error> {
     let mut seen_addresses = Vec::new(env);
 
     for member in members.iter() {
+        if member.percentage == 0 {
+            return Err(Error::InvalidInput);
+        }
         total_percentage += member.percentage;
         for seen in seen_addresses.iter() {
             if seen == member.address {
@@ -1317,4 +1552,302 @@ fn validate_members(members: &Vec<GroupMember>) -> Result<(), Error> {
         return Err(Error::InvalidTotalPercentage);
     }
     Ok(())
+}
+
+pub fn start_fundraising(
+    env: Env,
+    id: BytesN<32>,
+    caller: Address,
+    target_amount: i128,
+) -> Result<(), Error> {
+    caller.require_auth();
+
+    // Check if contract is paused
+    if get_paused_status(&env) {
+        return Err(Error::ContractPaused);
+    }
+
+    // Verify group exists
+    let key = DataKey::AutoShare(id.clone());
+    let details: AutoShareDetails = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(Error::NotFound)?;
+    bump_persistent(&env, &key);
+
+    // Verify caller is the group creator
+    if details.creator != caller {
+        return Err(Error::Unauthorized);
+    }
+
+    // Verify group is active
+    if !details.is_active {
+        return Err(Error::GroupInactive);
+    }
+
+    // Check no active fundraiser already exists for this group
+    let fundraising_key = DataKey::GroupFundraising(id.clone());
+    let existing_fundraising: Option<FundraisingConfig> =
+        env.storage().persistent().get(&fundraising_key);
+
+    if let Some(config) = existing_fundraising {
+        if config.is_active {
+            return Err(Error::FundraisingAlreadyActive);
+        }
+        bump_persistent(&env, &fundraising_key);
+    }
+
+    // Validate target_amount > 0
+    if target_amount <= 0 {
+        return Err(Error::InvalidAmount);
+    }
+
+    // Store a new FundraisingConfig
+    let fundraising_config = FundraisingConfig {
+        target_amount,
+        total_raised: 0,
+        is_active: true,
+    };
+
+    env.storage()
+        .persistent()
+        .set(&fundraising_key, &fundraising_config);
+    bump_persistent(&env, &fundraising_key);
+
+    // Emit a FundraisingStarted event
+    FundraisingStarted {
+        group_id: id,
+        target_amount,
+    }
+    .publish(&env);
+
+    Ok(())
+}
+
+pub fn contribute(
+    env: Env,
+    id: BytesN<32>,
+    token: Address,
+    amount: i128,
+    contributor: Address,
+) -> Result<(), Error> {
+    contributor.require_auth();
+
+    if get_paused_status(&env) {
+        return Err(Error::ContractPaused);
+    }
+
+    if amount <= 0 {
+        return Err(Error::InvalidAmount);
+    }
+
+    if !is_token_supported(env.clone(), token.clone()) {
+        return Err(Error::UnsupportedToken);
+    }
+
+    // Verify group exists and is active
+    let group_key = DataKey::AutoShare(id.clone());
+    let group_details: AutoShareDetails = env
+        .storage()
+        .persistent()
+        .get(&group_key)
+        .ok_or(Error::NotFound)?;
+    bump_persistent(&env, &group_key);
+
+    if !group_details.is_active {
+        return Err(Error::GroupInactive);
+    }
+
+    // Verify fundraising is active
+    let fundraising_key = DataKey::GroupFundraising(id.clone());
+    let mut fundraising_config: FundraisingConfig = env
+        .storage()
+        .persistent()
+        .get(&fundraising_key)
+        .ok_or(Error::FundraisingNotActive)?;
+
+    if !fundraising_config.is_active {
+        return Err(Error::FundraisingNotActive);
+    }
+    bump_persistent(&env, &fundraising_key);
+
+    // Transfer amount from contributor to the contract
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&contributor, env.current_contract_address(), &amount);
+
+    // Distribute funds to group members
+    perform_distribution(&env, &id, &token, amount, &group_details.members);
+
+    // Update fundraising total
+    fundraising_config.total_raised += amount;
+    if fundraising_config.total_raised >= fundraising_config.target_amount {
+        fundraising_config.is_active = false;
+    }
+    env.storage()
+        .persistent()
+        .set(&fundraising_key, &fundraising_config);
+    bump_persistent(&env, &fundraising_key);
+
+    // Record contribution
+    let contribution = FundraisingContribution {
+        group_id: id.clone(),
+        contributor: contributor.clone(),
+        token: token.clone(),
+        amount,
+        timestamp: env.ledger().timestamp(),
+    };
+
+    let group_contributions_key = DataKey::GroupContributions(id.clone());
+    let mut group_contributions: Vec<FundraisingContribution> = env
+        .storage()
+        .persistent()
+        .get(&group_contributions_key)
+        .unwrap_or(Vec::new(&env));
+    group_contributions.push_back(contribution.clone());
+    env.storage()
+        .persistent()
+        .set(&group_contributions_key, &group_contributions);
+    bump_persistent(&env, &group_contributions_key);
+
+    let user_contributions_key = DataKey::UserContributions(contributor.clone());
+    let mut user_contributions: Vec<FundraisingContribution> = env
+        .storage()
+        .persistent()
+        .get(&user_contributions_key)
+        .unwrap_or(Vec::new(&env));
+    user_contributions.push_back(contribution);
+    env.storage()
+        .persistent()
+        .set(&user_contributions_key, &user_contributions);
+    bump_persistent(&env, &user_contributions_key);
+
+    // Update group stats
+    let stats_key = DataKey::GroupStats(id.clone());
+    let mut stats: GroupStats = env
+        .storage()
+        .persistent()
+        .get(&stats_key)
+        .unwrap_or(GroupStats {
+            total_raised: 0,
+            contribution_count: 0,
+        });
+    stats.total_raised += amount;
+    stats.contribution_count += 1;
+    env.storage().persistent().set(&stats_key, &stats);
+    bump_persistent(&env, &stats_key);
+    // Emit new contribution event for fundraising tracking
+    emit_contribution(&env, &id, &contributor, &token, amount);
+
+    Ok(())
+}
+
+/// Returns the fundraising progress as a percentage (0-100).
+/// Returns 0 if no fundraising campaign exists.
+pub fn get_fundraising_progress(env: Env, id: BytesN<32>) -> u32 {
+    let key = DataKey::GroupFundraising(id);
+    let config: Option<FundraisingConfig> = env.storage().persistent().get(&key);
+
+    if let Some(fundraising) = config {
+        if fundraising.target_amount > 0 {
+            bump_persistent(&env, &key);
+            let progress = (fundraising.total_raised * 100) / fundraising.target_amount;
+            // Cap at 100%
+            if progress > 100 {
+                100
+            } else {
+                progress as u32
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
+/// Checks if a fundraising campaign has reached its target.
+pub fn is_fundraising_target_reached(env: Env, id: BytesN<32>) -> bool {
+    let key = DataKey::GroupFundraising(id);
+    let config: Option<FundraisingConfig> = env.storage().persistent().get(&key);
+
+    if let Some(fundraising) = config {
+        bump_persistent(&env, &key);
+        fundraising.total_raised >= fundraising.target_amount
+    } else {
+        false
+    }
+}
+
+/// Returns the total amount a user has contributed across all groups.
+pub fn get_user_total_contributions(env: Env, user: Address) -> i128 {
+    let key = DataKey::UserContributions(user);
+    let contributions: Vec<FundraisingContribution> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(Vec::new(&env));
+
+    if contributions.is_empty() {
+        return 0;
+    }
+
+    bump_persistent(&env, &key);
+
+    let mut total: i128 = 0;
+    for contribution in contributions.iter() {
+        total += contribution.amount;
+    }
+    total
+}
+
+/// Returns the number of unique contributors to a group's fundraising campaign.
+pub fn get_contributor_count(env: Env, id: BytesN<32>) -> u32 {
+    let key = DataKey::GroupContributions(id);
+    let contributions: Vec<FundraisingContribution> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(Vec::new(&env));
+
+    if contributions.is_empty() {
+        return 0;
+    }
+
+    bump_persistent(&env, &key);
+
+    // Count unique contributors
+    let mut unique_contributors: Vec<Address> = Vec::new(&env);
+    for contribution in contributions.iter() {
+        let mut found = false;
+        for existing in unique_contributors.iter() {
+            if existing == contribution.contributor {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            unique_contributors.push_back(contribution.contributor.clone());
+        }
+    }
+    unique_contributors.len()
+}
+
+/// Returns the remaining amount needed to reach the fundraising target.
+/// Returns 0 if target is already reached or no fundraising exists.
+pub fn get_fundraising_remaining(env: Env, id: BytesN<32>) -> i128 {
+    let key = DataKey::GroupFundraising(id);
+    let config: Option<FundraisingConfig> = env.storage().persistent().get(&key);
+
+    if let Some(fundraising) = config {
+        bump_persistent(&env, &key);
+        let remaining = fundraising.target_amount - fundraising.total_raised;
+        if remaining > 0 {
+            remaining
+        } else {
+            0
+        }
+    } else {
+        0
+    }
 }

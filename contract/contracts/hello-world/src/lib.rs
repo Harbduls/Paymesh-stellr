@@ -92,9 +92,14 @@ impl AutoShareContract {
         autoshare_logic::get_groups_by_creator(env, creator)
     }
 
+    /// Retrieves all AutoShare groups an address is a member of.
+    pub fn get_groups_by_member(env: Env, member: Address) -> Vec<base::types::AutoShareDetails> {
+        autoshare_logic::get_groups_by_member(env, member)
+    }
+
     /// Returns a paginated list of groups.
-    pub fn get_groups_paginated(env: Env, offset: u32, limit: u32) -> base::types::GroupPage {
-        autoshare_logic::get_groups_paginated(env, offset, limit)
+    pub fn get_groups_paginated(env: Env, start_index: u32, limit: u32) -> base::types::GroupPage {
+        autoshare_logic::get_groups_paginated(env, start_index, limit)
     }
 
     /// Returns a paginated list of groups created by a specific address.
@@ -105,6 +110,11 @@ impl AutoShareContract {
         limit: u32,
     ) -> base::types::GroupPage {
         autoshare_logic::get_groups_by_creator_paginated(env, creator, offset, limit)
+    }
+
+    /// Returns the total number of groups.
+    pub fn get_group_count(env: Env) -> u32 {
+        autoshare_logic::get_group_count(env)
     }
 
     /// Checks if an address is a member of a specific group.
@@ -269,7 +279,7 @@ impl AutoShareContract {
     pub fn get_member_distributions(
         env: Env,
         member: Address,
-    ) -> Vec<base::types::DistributionHistory> {
+    ) -> Vec<base::types::DistributionRecord> {
         autoshare_logic::get_member_distributions(env, member)
     }
 
@@ -296,6 +306,63 @@ impl AutoShareContract {
     pub fn get_fundraising_status(env: Env, id: BytesN<32>) -> base::types::FundraisingConfig {
         autoshare_logic::get_fundraising_status(env, id)
     }
+
+    /// Returns all contributions for a specific group.
+    pub fn get_group_contributions(
+        env: Env,
+        id: BytesN<32>,
+    ) -> Vec<base::types::FundraisingContribution> {
+        autoshare_logic::get_group_contributions(env, id)
+    }
+
+    /// Returns all contributions made by a specific user.
+    pub fn get_user_contributions(
+        env: Env,
+        user: Address,
+    ) -> Vec<base::types::FundraisingContribution> {
+        autoshare_logic::get_user_contributions(env, user)
+    }
+
+    /// Starts a fundraising campaign for a group.
+    pub fn start_fundraising(env: Env, id: BytesN<32>, caller: Address, target_amount: i128) {
+        autoshare_logic::start_fundraising(env, id, caller, target_amount).unwrap();
+    }
+
+    /// Contributes funds to a fundraising campaign.
+    pub fn contribute(
+        env: Env,
+        id: BytesN<32>,
+        token: Address,
+        amount: i128,
+        contributor: Address,
+    ) {
+        autoshare_logic::contribute(env, id, token, amount, contributor).unwrap();
+    }
+
+    /// Returns the fundraising progress as a percentage (0-100).
+    pub fn get_fundraising_progress(env: Env, id: BytesN<32>) -> u32 {
+        autoshare_logic::get_fundraising_progress(env, id)
+    }
+
+    /// Checks if a fundraising campaign has reached its target.
+    pub fn is_fundraising_target_reached(env: Env, id: BytesN<32>) -> bool {
+        autoshare_logic::is_fundraising_target_reached(env, id)
+    }
+
+    /// Returns the total amount a user has contributed across all groups.
+    pub fn get_user_total_contributions(env: Env, user: Address) -> i128 {
+        autoshare_logic::get_user_total_contributions(env, user)
+    }
+
+    /// Returns the number of unique contributors to a group's fundraising campaign.
+    pub fn get_contributor_count(env: Env, id: BytesN<32>) -> u32 {
+        autoshare_logic::get_contributor_count(env, id)
+    }
+
+    /// Returns the remaining amount needed to reach the fundraising target.
+    pub fn get_fundraising_remaining(env: Env, id: BytesN<32>) -> i128 {
+        autoshare_logic::get_fundraising_remaining(env, id)
+    }
 }
 
 // 3. Link the tests (Requirement: Unit Tests)
@@ -316,6 +383,10 @@ mod mock_token_test;
 pub mod test_utils;
 
 #[cfg(test)]
+#[path = "tests/get_groups_by_member_test.rs"]
+mod get_groups_by_member_test;
+
+#[cfg(test)]
 #[path = "tests/test_utils_test.rs"]
 mod test_utils_test;
 
@@ -334,3 +405,23 @@ mod pagination_test;
 #[cfg(test)]
 #[path = "tests/fundraising_test.rs"]
 mod fundraising_test;
+
+#[cfg(test)]
+#[path = "tests/fundraising_start_test.rs"]
+mod fundraising_start_test;
+
+#[cfg(test)]
+#[path = "tests/fundraising_contribute_test.rs"]
+mod fundraising_contribute_test;
+
+#[cfg(test)]
+#[path = "tests/fundraising_improvements_test.rs"]
+mod fundraising_improvements_test;
+
+#[cfg(test)]
+#[path = "tests/max_members_test.rs"]
+mod max_members_test;
+
+#[cfg(test)]
+#[path = "tests/group_count_property_test.rs"]
+mod group_count_property_test;
